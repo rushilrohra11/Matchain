@@ -97,42 +97,200 @@ def fetch_materials_project_data(api_key, n_samples=3000):
     return pd.DataFrame(rows)
 
 
-def make_synthetic_dataset(n=1500):
-    """Fallback synthetic dataset so the pipeline runs smoothly offline or without an API key."""
-    elements_pool = [
-        ["Ti", "V", "Nb", "Al"], ["Fe", "Ni", "Cr"], ["Li", "Co", "O"],
-        ["Na", "Cl"], ["Si", "O"], ["Zn", "S"], ["Ba", "Ti", "O"], ["Mg", "Al", "O"],
-    ]
-    rows = []
-    for i in range(n):
-        els = random.choice(elements_pool)
-        a = round(random.uniform(3.0, 6.0), 3)
-        lattice = Lattice.cubic(a)
-        n_sites = random.randint(2, 6)
-        species = [random.choice(els) for _ in range(n_sites)]
-        if n_sites == 2:
-            coords = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]])
-        elif n_sites == 4:
-            coords = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.0], [0.5, 0.0, 0.5], [0.0, 0.5, 0.5]])
-        else:
-            coords = np.linspace(0.1, 0.9, n_sites * 3).reshape(n_sites, 3) % 1.0
+REFERENCE_SYSTEMS = [
+    {
+        "name": "Ti-V-Nb-Al",
+        "elements": ["Ti", "V", "Nb", "Al"],
+        "phases": [
+            ("Ti", 0.0, 4.50, 0.0, 2),
+            ("V", 0.0, 6.11, 0.0, 2),
+            ("Nb", 0.0, 8.57, 0.0, 2),
+            ("Al", 0.0, 2.70, 0.0, 4),
+            ("TiAl", -0.42, 3.91, 0.0, 4),
+            ("TiAl3", -0.38, 3.30, 0.0, 4),
+            ("Ti3Al", -0.28, 4.20, 0.0, 4),
+            ("NbAl3", -0.45, 4.54, 0.0, 4),
+            ("VAl3", -0.35, 3.75, 0.0, 4),
+            ("TiV2", -0.12, 5.50, 0.0, 3),
+            ("Ti2AlNb", -0.36, 5.20, 0.0, 4),
+            ("TiNbAl2", -0.39, 4.80, 0.0, 4),
+        ],
+    },
+    {
+        "name": "Fe-Ni-Cr",
+        "elements": ["Fe", "Ni", "Cr"],
+        "phases": [
+            ("Fe", 0.0, 7.87, 0.0, 2),
+            ("Ni", 0.0, 8.90, 0.0, 4),
+            ("Cr", 0.0, 7.19, 0.0, 2),
+            ("FeCr", -0.15, 7.50, 0.0, 4),
+            ("Fe3Cr", -0.10, 7.70, 0.0, 4),
+            ("CrFeNi2", -0.14, 8.10, 0.0, 4),
+            ("Ni3Fe", -0.12, 8.60, 0.0, 4),
+            ("FeNi", -0.09, 8.30, 0.0, 4),
+        ],
+    },
+    {
+        "name": "Li-Co-O",
+        "elements": ["Li", "Co", "O"],
+        "phases": [
+            ("Li", 0.0, 0.53, 0.0, 2),
+            ("Co", 0.0, 8.90, 0.0, 2),
+            ("O", 0.0, 1.42, 0.0, 2),
+            ("LiCoO2", -2.35, 5.06, 2.1, 4),
+            ("Co3O4", -1.80, 6.07, 1.6, 7),
+            ("CoO", -1.65, 6.44, 2.5, 4),
+            ("Li2O", -2.05, 2.01, 7.2, 3),
+            ("Li2O2", -1.70, 2.30, 4.5, 4),
+            ("Li2CoO3", -2.25, 4.60, 2.4, 6),
+        ],
+    },
+    {
+        "name": "Na-Cl",
+        "elements": ["Na", "Cl"],
+        "phases": [
+            ("Na", 0.0, 0.97, 0.0, 2),
+            ("Cl", 0.0, 1.56, 0.0, 2),
+            ("NaCl", -2.13, 2.16, 8.5, 2),
+            ("Na2Cl", -1.40, 1.80, 5.0, 3),
+            ("NaCl2", -1.35, 2.05, 4.8, 3),
+        ],
+    },
+    {
+        "name": "Si-O",
+        "elements": ["Si", "O"],
+        "phases": [
+            ("Si", 0.0, 2.33, 1.1, 2),
+            ("O", 0.0, 1.42, 0.0, 2),
+            ("SiO2", -3.15, 2.65, 8.9, 3),
+            ("SiO", -2.10, 2.13, 3.5, 2),
+            ("Si2O3", -2.75, 2.45, 6.2, 5),
+        ],
+    },
+    {
+        "name": "Zn-S",
+        "elements": ["Zn", "S"],
+        "phases": [
+            ("Zn", 0.0, 7.14, 0.0, 2),
+            ("S", 0.0, 2.07, 2.6, 4),
+            ("ZnS", -1.06, 4.09, 3.6, 2),
+            ("Zn2S", -0.70, 5.20, 2.0, 3),
+            ("ZnS2", -0.85, 3.50, 2.8, 3),
+        ],
+    },
+    {
+        "name": "Ba-Ti-O",
+        "elements": ["Ba", "Ti", "O"],
+        "phases": [
+            ("Ba", 0.0, 3.51, 0.0, 2),
+            ("Ti", 0.0, 4.50, 0.0, 2),
+            ("O", 0.0, 1.42, 0.0, 2),
+            ("BaTiO3", -3.42, 6.02, 3.2, 5),
+            ("TiO2", -3.20, 4.23, 3.0, 3),
+            ("BaO", -2.85, 5.72, 4.0, 2),
+            ("BaTi2O5", -3.26, 5.20, 3.1, 8),
+            ("Ba2TiO4", -3.10, 5.80, 3.4, 7),
+        ],
+    },
+    {
+        "name": "Mg-Al-O",
+        "elements": ["Mg", "Al", "O"],
+        "phases": [
+            ("Mg", 0.0, 1.74, 0.0, 2),
+            ("Al", 0.0, 2.70, 0.0, 4),
+            ("O", 0.0, 1.42, 0.0, 2),
+            ("MgAl2O4", -3.38, 3.60, 7.8, 7),
+            ("Al2O3", -3.50, 3.95, 8.8, 5),
+            ("MgO", -3.10, 3.58, 7.7, 2),
+            ("Mg2Al4O7", -3.30, 3.70, 8.0, 13),
+        ],
+    },
+]
 
-        try:
-            struct = Structure(lattice, species, coords)
-        except Exception:
-            continue
-        form_e = round(random.uniform(-3.5, -0.2), 4)
-        e_hull = round(max(0, random.gauss(0.02, 0.02)), 4)
+
+def _make_structure_for_formula(formula, density, n_sites):
+    comp = Composition(formula)
+    amu = comp.weight
+    volume = amu / (density * 0.602214)
+    a = max(2.5, min(20.0, float(volume ** (1 / 3))))
+    lattice = Lattice.cubic(a)
+    elements_in_comp = comp.elements
+    total_comp_atoms = comp.num_atoms
+    species = []
+    for el in elements_in_comp:
+        count = max(1, int(round((comp[el] / total_comp_atoms) * n_sites)))
+        species.extend([el.symbol] * count)
+    while len(species) < n_sites:
+        species.append(random.choice(elements_in_comp).symbol)
+    species = species[:n_sites]
+
+    if n_sites == 1:
+        coords = np.array([[0.0, 0.0, 0.0]])
+    elif n_sites == 2:
+        coords = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]])
+    elif n_sites == 3:
+        coords = np.array([[0.0, 0.0, 0.0], [0.33, 0.33, 0.33], [0.67, 0.67, 0.67]])
+    elif n_sites == 4:
+        coords = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.0], [0.5, 0.0, 0.5], [0.0, 0.5, 0.5]])
+    elif n_sites == 5:
+        coords = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5], [0.5, 0.5, 0.0], [0.5, 0.0, 0.5], [0.0, 0.5, 0.5]])
+    else:
+        coords = np.linspace(0.05, 0.95, n_sites * 3).reshape(n_sites, 3) % 1.0
+
+    return Structure(lattice, species, coords)
+
+
+def make_synthetic_dataset(n=1500):
+    """Fallback synthetic dataset obeying physical thermodynamic ground states and realistic densities."""
+    rows = []
+    idx = 0
+    # Include pure elemental references and ground-state compounds multiple times
+    for system in REFERENCE_SYSTEMS:
+        for formula, fe, density, bg, ns in system["phases"]:
+            struct = _make_structure_for_formula(formula, density, ns)
+            e_hull = 0.0
+            rows.append({
+                "material_id": f"syn-ref-{idx}",
+                "formula": struct.composition.reduced_formula,
+                "structure": struct,
+                "formation_energy_per_atom": fe,
+                "band_gap": bg,
+                "density": float(struct.density),
+                "energy_above_hull": e_hull,
+                "nsites": len(struct),
+                "system": system["name"],
+            })
+            idx += 1
+
+    # Populate realistic variations within each chemical system
+    while len(rows) < n:
+        system = random.choice(REFERENCE_SYSTEMS)
+        base_formula, base_fe, base_density, base_bg, base_ns = random.choice(system["phases"])
+        comp = Composition(base_formula)
+        if len(comp.elements) == 1:
+            fe = 0.0
+            e_hull = 0.0
+        else:
+            e_hull = round(max(0.0, random.gauss(0.015, 0.01)), 4)
+            fe = round(base_fe + e_hull, 4)
+
+        density = round(max(1.5, base_density + random.gauss(0.0, 0.1)), 3)
+        bg = round(max(0.0, base_bg + random.gauss(0.0, 0.1)), 2)
+        struct = _make_structure_for_formula(base_formula, density, base_ns)
+
         rows.append({
-            "material_id": f"synthetic-{i}",
+            "material_id": f"synthetic-{idx}",
             "formula": struct.composition.reduced_formula,
             "structure": struct,
-            "formation_energy_per_atom": form_e,
-            "band_gap": round(max(0, random.gauss(1.2, 1.0)), 3),
-            "density": round(random.uniform(1.5, 9.0), 3),
+            "formation_energy_per_atom": fe,
+            "band_gap": bg,
+            "density": float(struct.density),
             "energy_above_hull": e_hull,
-            "nsites": n_sites,
+            "nsites": len(struct),
+            "system": system["name"],
         })
+        idx += 1
+
     return pd.DataFrame(rows)
 
 
@@ -219,14 +377,14 @@ def struct_to_vector(struct, element_vocab, el2idx):
 def find_prototype_structure(dataset_df, target_species, target_density, target_fe):
     """
     Finds a structurally compatible crystal prototype from dataset_df.
-    Fast sample lookup (n=40) scored by composition overlap, density, and formation energy.
+    Evaluates candidates scored by composition overlap, density, and formation energy.
     """
     target_set = set(target_species)
     best_struct = None
     best_score = -999.0
 
-    sample_size = min(40, len(dataset_df))
-    sample_df = dataset_df.iloc[:sample_size]
+    # Search through dataset (sample up to 300 rows for speed and coverage)
+    sample_df = dataset_df if len(dataset_df) <= 300 else dataset_df.sample(300, random_state=SEED)
 
     for _, row in sample_df.iterrows():
         try:
@@ -235,14 +393,14 @@ def find_prototype_structure(dataset_df, target_species, target_density, target_
             intersection = proto_elements.intersection(target_set)
             if not intersection:
                 continue
-            
+
             union = proto_elements.union(target_set)
             jaccard = len(intersection) / len(union)
-            
+
             density_diff = abs(row.get("density", 5.0) - target_density)
             fe_diff = abs(row.get("formation_energy_per_atom", -1.5) - target_fe)
-            
-            score = jaccard * 2.0 - 0.05 * density_diff - 0.05 * fe_diff
+
+            score = jaccard * 3.0 - 0.05 * density_diff - 0.05 * fe_diff
             if score > best_score:
                 best_score = score
                 best_struct = struct
@@ -255,47 +413,68 @@ def find_prototype_structure(dataset_df, target_species, target_density, target_
 def vector_to_structure_grounded(vec, element_vocab, dataset_df, target_condition):
     """
     Decodes VAE feature vector into a physically grounded pymatgen Structure.
-    Uses fractional coordinates from dataset prototypes or crystallographic templates instead of uniform random noise.
+    Aligns composition to coherent chemical systems and scales prototype lattices to target density.
     """
     n_elements = len(element_vocab)
+    el2idx = {e: i for i, e in enumerate(element_vocab)}
     comp_part = np.clip(vec[:n_elements], 0, None)
     if comp_part.sum() <= 0:
         return None
     comp_part = comp_part / comp_part.sum()
-    
-    lat_part = vec[n_elements:] * np.array([10.0, 10.0, 10.0, 180.0, 180.0, 180.0])
-    a, b, c = [max(2.5, min(25.0, float(x))) for x in lat_part[:3]]
-    alpha, beta, gamma = [max(40.0, min(140.0, float(x))) for x in lat_part[3:]]
 
-    top_idx = np.argsort(comp_part)[::-1][:4]
-    top_idx = [i for i in top_idx if comp_part[i] > 0.03]
-    if not top_idx:
-        return None
-    target_species = [element_vocab[i] for i in top_idx]
+    # Find the chemical system with the highest activation
+    best_sys = None
+    best_sys_score = -1.0
+    for sys_info in REFERENCE_SYSTEMS:
+        score = sum(comp_part[el2idx[el]] for el in sys_info["elements"] if el in el2idx)
+        if score > best_sys_score:
+            best_sys_score = score
+            best_sys = sys_info
 
-    target_density = target_condition.get("density", 5.0)
-    target_fe = target_condition.get("formation_energy_per_atom", -1.5)
+    if best_sys:
+        sys_elements = [el for el in best_sys["elements"] if el in el2idx]
+        sorted_elements = sorted(sys_elements, key=lambda el: comp_part[el2idx[el]], reverse=True)
+        target_species = sorted_elements[:3]
+        if len(target_species) < 2 and len(sorted_elements) >= 2:
+            target_species = sorted_elements[:2]
+    else:
+        top_idx = np.argsort(comp_part)[::-1][:3]
+        target_species = [element_vocab[i] for i in top_idx if comp_part[i] > 0.05]
+        if not target_species:
+            target_species = [element_vocab[top_idx[0]]]
+
+    target_density = float(target_condition.get("density", 5.0))
+    target_fe = float(target_condition.get("formation_energy_per_atom", -1.5))
 
     proto_struct = find_prototype_structure(dataset_df, target_species, target_density, target_fe)
 
     try:
-        lattice = Lattice.from_parameters(a, b, c, alpha, beta, gamma)
         if proto_struct is not None:
+            # Scale prototype lattice volume to match target density
+            proto_density = max(0.5, float(proto_struct.density))
+            scale_factor = max(0.6, min(1.6, (proto_density / max(0.5, target_density)) ** (1 / 3)))
+            new_lattice = Lattice(proto_struct.lattice.matrix * scale_factor)
+
             n_sites = proto_struct.num_sites
             site_species = [target_species[i % len(target_species)] for i in range(n_sites)]
             frac_coords = proto_struct.frac_coords.copy()
-            jitter = np.random.normal(0, 0.005, size=frac_coords.shape)
+            jitter = np.random.normal(0, 0.003, size=frac_coords.shape)
             frac_coords = (frac_coords + jitter) % 1.0
-            return Structure(lattice, site_species, frac_coords)
+            return Structure(new_lattice, site_species, frac_coords)
         else:
+            # Standard crystallographic template scaled to target density
             n_sites = max(2, min(8, len(target_species) * 2))
             site_species = [target_species[i % len(target_species)] for i in range(n_sites)]
+            avg_mass = sum(Composition(s).weight for s in site_species)
+            volume = avg_mass / (max(0.5, target_density) * 0.602214)
+            a = max(2.5, min(20.0, float(volume ** (1 / 3))))
+            lattice = Lattice.cubic(a)
             if n_sites == 2:
                 coords = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]])
             elif n_sites == 4:
                 coords = np.array([[0.0, 0.0, 0.0], [0.5, 0.5, 0.0], [0.5, 0.0, 0.5], [0.0, 0.5, 0.5]])
             else:
-                coords = np.linspace(0.1, 0.9, n_sites * 3).reshape(n_sites, 3) % 1.0
+                coords = np.linspace(0.05, 0.95, n_sites * 3).reshape(n_sites, 3) % 1.0
             return Structure(lattice, site_species, coords)
     except Exception:
         return None
@@ -582,13 +761,29 @@ def load_all_models(dataset_df):
         print(f"CHGNet could not be loaded: {e}")
 
     m3gnet_calc = None
+    _M3GNET_CANDIDATES = [
+        "M3GNet-PES-MatPES-PBE-2025.2",
+        "M3GNet-PES-2021.2.8-PBE-DIRECT-COMPAT",
+        "M3GNet-PES-2021.2.8-PBE",
+        "M3GNet-PES-2021.2.8",
+    ]
     try:
         import matgl
         from matgl.ext.ase import PESCalculator
-        m3gnet_model = matgl.load_model("M3GNet-PES-MatPES-PBE-2025.2")
-        m3gnet_calc = PESCalculator(potential=m3gnet_model)
-    except Exception as e:
-        print(f"M3GNet could not be loaded: {e}")
+        _m3g_loaded = False
+        for _m3g_name in _M3GNET_CANDIDATES:
+            try:
+                m3gnet_model = matgl.load_model(_m3g_name)
+                m3gnet_calc = PESCalculator(potential=m3gnet_model)
+                print(f"M3GNet loaded: {_m3g_name}")
+                _m3g_loaded = True
+                break
+            except Exception as _m3g_err:
+                print(f"M3GNet model '{_m3g_name}' not available: {_m3g_err}")
+        if not _m3g_loaded:
+            print("M3GNet could not be loaded: no pretrained model was accessible.")
+    except ImportError as e:
+        print(f"M3GNet could not be loaded (import error): {e}")
 
     xgb_model = None
     magpie_featurizer = None
@@ -759,6 +954,8 @@ def approximate_energy_above_hull(dataset_df, struct, candidate_formation_energy
                 comp_elements = {el.symbol for el in comp.elements}
                 fe = row.get("formation_energy_per_atom")
                 if comp_elements.issubset(element_set) and fe is not None and not np.isnan(fe):
+                    if len(comp_elements) == 1 and fe < 0:
+                        fe = 0.0
                     total_entry_energy = float(fe) * float(comp.num_atoms)
                     entries_list.append({"comp": comp.formula, "energy": total_entry_energy, "id": str(row["material_id"])})
             except Exception:
@@ -772,7 +969,19 @@ def approximate_energy_above_hull(dataset_df, struct, candidate_formation_energy
         candidate_total_energy = float(candidate_formation_energy_per_atom) * candidate_num_atoms
         candidate_entry = ComputedEntry(struct.composition, candidate_total_energy)
 
-        e_hull = float(pd_obj.get_e_above_hull(candidate_entry))
+        try:
+            e_hull = float(pd_obj.get_e_above_hull(candidate_entry))
+        except Exception as eh_err:
+            err_str = str(eh_err)
+            if "(e_h:" in err_str:
+                try:
+                    val = float(err_str.split("(e_h:")[1].split(")")[0].strip())
+                    if val <= 0:
+                        return 0.0, None
+                except Exception:
+                    pass
+            pd_with = PhaseDiagram([ComputedEntry(Composition(e["comp"]), float(e["energy"]), entry_id=e["id"]) for e in entries_list] + [candidate_entry])
+            e_hull = float(pd_with.get_e_above_hull(candidate_entry))
         return e_hull, None
     except Exception as e:
         return None, f"PhaseDiagram Exception: {str(e)}"

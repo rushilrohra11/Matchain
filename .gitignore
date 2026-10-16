@@ -28,8 +28,23 @@ htmlcov/
 # Local configuration and secrets
 .env
 .env.*
+.venv
 !.env.example
 
 # Operating system files
 .DS_Store
 Thumbs.db
+
+./node_modules/
+.node_modules/
+**/node_modules/
+contracts/artifacts/
+contracts/cache/
+contracts/deployments/
+backend/data/
+frontend/.env.local
+
+# Runtime-generated data (NOT source code — do not commit)
+matchain_ipfs_store.json
+matchain_local_store.json
+backend/backend/

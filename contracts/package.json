@@ -1,0 +1,17 @@
+{
+  "name": "matchain-contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:ganache": "node scripts/ganache-e2e.js",
+    "node": "ganache --server.host 127.0.0.1 --server.port 8545 --chain.chainId 1337 --wallet.mnemonic \"test test test test test test test test test test test junk\" --wallet.totalAccounts 10 --wallet.defaultBalance 10000",
+    "deploy": "hardhat run scripts/deploy.js --network localhost"
+  },
+  "devDependencies": {
+    "ethers": "^6.16.0",
+    "ganache": "^7.0.0",
+    "hardhat": "^2.22.16"
+  }
+}
